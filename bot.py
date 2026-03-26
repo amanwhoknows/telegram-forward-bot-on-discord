@@ -18,6 +18,7 @@ DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 TG_API_ID = 25163164
 TG_API_HASH = '43ca49c7549ffd65e275fc531514e8c4'
 SESSIONS_DIR = "tg_sessions" # Folder to store multiple session files
+DB_CHANNEL_ID = 1486751086239945016  # Replace with your #db-vault channel ID
 
 # Ensure the sessions directory exists
 if not os.path.exists(SESSIONS_DIR):
