@@ -3,6 +3,7 @@ from discord.ext import commands
 import asyncio
 import re
 import os
+import glob
 import io
 import aiohttp
 from bs4 import BeautifulSoup
@@ -69,7 +70,61 @@ async def login(ctx, session_name: str, session_string: str):
         await temp_client.disconnect()
     except Exception as e:
         await ctx.send(f"❌ Error connecting to Telegram: {str(e)}")
+        
+@bot.command(name="sessions")
+async def check_sessions(ctx):
+    # Optional: Add a check here so only YOU can run this command
+    # if ctx.author.id != YOUR_DISCORD_ID: return
 
+    # Let the user know it's working (Telethon connections take a second)
+    status_msg = await ctx.send("🔍 Scanning local directory for Telegram sessions...")
+    
+    # Find all Telethon session files in the current folder
+    session_files = glob.glob("*.session")
+    
+    if not session_files:
+        await status_msg.edit(content="❌ No `.session` files found in the bot's directory.")
+        return
+
+    results = []
+    
+    for file in session_files:
+        session_name = file.replace(".session", "")
+        
+        # Initialize the Telethon client
+        client = TelegramClient(session_name, API_ID, API_HASH)
+        
+        try:
+            # Connect to Telegram servers without starting a new login prompt
+            await client.connect()
+            
+            # Check if the session file is still valid and logged in
+            if await client.is_user_authorized():
+                me = await client.get_me()
+                # Telegram sometimes hides the phone number depending on privacy settings
+                phone = me.phone if me.phone else "Hidden by Privacy Settings"
+                results.append(f"✅ **{session_name}** ➔ 📱 `+{phone}`")
+            else:
+                results.append(f"❌ **{session_name}** ➔ ⚠️ Dead Session (Needs Re-auth)")
+                
+        except Exception as e:
+            results.append(f"⚠️ **{session_name}** ➔ Connection Error")
+            
+        finally:
+            # Always disconnect so you don't leak memory or hang the bot
+            await client.disconnect()
+
+    # Build a nice looking Discord Embed for the output
+    embed = discord.Embed(
+        title="📱 Telegram Fleet Status", 
+        description="\n\n".join(results),
+        color=discord.Color.green()
+    )
+    embed.set_footer(text=f"Total Sessions Found: {len(session_files)}")
+    
+    # Update the original message with the final embed
+    await status_msg.edit(content="", embed=embed)
+    
 @bot.command()
 async def stop(ctx, session_name: str):
     """Command to stop a specific broadcast loop."""
