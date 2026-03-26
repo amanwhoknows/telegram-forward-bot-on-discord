@@ -73,39 +73,42 @@ async def login(ctx, session_name: str, session_string: str):
         
 @bot.command(name="sessions")
 async def check_sessions(ctx):
-    # Let the user know it's working (Telethon connections take a second)
     status_msg = await ctx.send(f"🔍 Scanning `{SESSIONS_DIR}` for saved Telegram sessions...")
     
-    # Find all .txt files in your custom sessions directory
+    # 1. Check if the directory even exists
+    if not os.path.exists(SESSIONS_DIR):
+        await status_msg.edit(content=f"❌ The directory `{SESSIONS_DIR}` does not exist!")
+        return
+
+    # 2. Find all .txt files
     session_files = glob.glob(os.path.join(SESSIONS_DIR, "*.txt"))
     
     if not session_files:
-        await status_msg.edit(content=f"❌ No session files found in the `{SESSIONS_DIR}` directory.")
+        await status_msg.edit(content=f"❌ No `.txt` files found inside the `{SESSIONS_DIR}` folder.")
         return
 
     results = []
     
     for file_path in session_files:
-        # Extract just the name of the session from the file path
         filename = os.path.basename(file_path)
         session_name = filename.replace(".txt", "")
         
         try:
-            # Read the saved string session from the file
             with open(file_path, "r") as f:
                 session_string = f.read().strip()
                 
             if not session_string:
-                results.append(f"❌ **{session_name}** ➔ ⚠️ Empty File")
+                results.append(f"❌ **{session_name}** ➔ ⚠️ File is completely empty")
                 continue
 
-            # Initialize the Telethon client using the StringSession
-            client = TelegramClient(StringSession(session_string), TG_API_ID, TG_API_HASH)
+            # FIX 1: Explicitly grab Discord's running event loop
+            loop = asyncio.get_running_loop()
             
-            # Connect to Telegram servers
+            # FIX 2: Force Telethon to use Discord's loop so it doesn't crash
+            client = TelegramClient(StringSession(session_string), TG_API_ID, TG_API_HASH, loop=loop)
+            
             await client.connect()
             
-            # Check if the session file is still valid and logged in
             if await client.is_user_authorized():
                 me = await client.get_me()
                 phone = me.phone if me.phone else "Hidden by Privacy Settings"
@@ -114,23 +117,22 @@ async def check_sessions(ctx):
                 results.append(f"❌ **{session_name}** ➔ ⚠️ Dead Session (Needs Re-auth)")
                 
         except Exception as e:
-            results.append(f"⚠️ **{session_name}** ➔ Connection Error")
-            print(f"Error checking session {session_name}: {e}") # Print to console for debugging
+            # FIX 3: Push the EXACT Python error straight to Discord so we can read it
+            error_name = type(e).__name__
+            error_msg = str(e)
+            results.append(f"⚠️ **{session_name}** ➔ Error: `{error_name}: {error_msg}`")
             
         finally:
-            # Safely disconnect if the client was created
             if 'client' in locals() and client.is_connected():
                 await client.disconnect()
 
-    # Build the Discord Embed for the output
     embed = discord.Embed(
         title="📱 Telegram Fleet Status", 
         description="\n\n".join(results),
-        color=discord.Color.green()
+        color=discord.Color.blue()
     )
     embed.set_footer(text=f"Total Sessions Checked: {len(session_files)}")
     
-    # Update the original message with the final embed
     await status_msg.edit(content="", embed=embed)
 
 
