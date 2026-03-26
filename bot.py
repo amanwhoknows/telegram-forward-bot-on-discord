@@ -124,7 +124,8 @@ async def check_sessions(ctx):
     
     # Update the original message with the final embed
     await status_msg.edit(content="", embed=embed)
-    
+
+
 @bot.command()
 async def stop(ctx, session_name: str):
     """Command to stop a specific broadcast loop."""
