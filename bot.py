@@ -70,70 +70,6 @@ async def login(ctx, session_name: str, session_string: str):
         await temp_client.disconnect()
     except Exception as e:
         await ctx.send(f"❌ Error connecting to Telegram: {str(e)}")
-        
-@bot.command(name="sessions")
-async def check_sessions(ctx):
-    status_msg = await ctx.send(f"🔍 Scanning `{SESSIONS_DIR}` for saved Telegram sessions...")
-    
-    # 1. Check if the directory even exists
-    if not os.path.exists(SESSIONS_DIR):
-        await status_msg.edit(content=f"❌ The directory `{SESSIONS_DIR}` does not exist!")
-        return
-
-    # 2. Find all .txt files
-    session_files = glob.glob(os.path.join(SESSIONS_DIR, "*.txt"))
-    
-    if not session_files:
-        await status_msg.edit(content=f"❌ No `.txt` files found inside the `{SESSIONS_DIR}` folder.")
-        return
-
-    results = []
-    
-    for file_path in session_files:
-        filename = os.path.basename(file_path)
-        session_name = filename.replace(".txt", "")
-        
-        try:
-            with open(file_path, "r") as f:
-                session_string = f.read().strip()
-                
-            if not session_string:
-                results.append(f"❌ **{session_name}** ➔ ⚠️ File is completely empty")
-                continue
-
-            # FIX 1: Explicitly grab Discord's running event loop
-            loop = asyncio.get_running_loop()
-            
-            # FIX 2: Force Telethon to use Discord's loop so it doesn't crash
-            client = TelegramClient(StringSession(session_string), TG_API_ID, TG_API_HASH, loop=loop)
-            
-            await client.connect()
-            
-            if await client.is_user_authorized():
-                me = await client.get_me()
-                phone = me.phone if me.phone else "Hidden by Privacy Settings"
-                results.append(f"✅ **{session_name}** ➔ 📱 `+{phone}`")
-            else:
-                results.append(f"❌ **{session_name}** ➔ ⚠️ Dead Session (Needs Re-auth)")
-                
-        except Exception as e:
-            # FIX 3: Push the EXACT Python error straight to Discord so we can read it
-            error_name = type(e).__name__
-            error_msg = str(e)
-            results.append(f"⚠️ **{session_name}** ➔ Error: `{error_name}: {error_msg}`")
-            
-        finally:
-            if 'client' in locals() and client.is_connected():
-                await client.disconnect()
-
-    embed = discord.Embed(
-        title="📱 Telegram Fleet Status", 
-        description="\n\n".join(results),
-        color=discord.Color.blue()
-    )
-    embed.set_footer(text=f"Total Sessions Checked: {len(session_files)}")
-    
-    await status_msg.edit(content="", embed=embed)
 
 
 @bot.command()
@@ -350,5 +286,71 @@ async def check(ctx):
             )
     else:
         await ctx.send("🏁 **Check Complete!** No valid public groups were found in that list.")
+
+
+@bot.command(name="sessions")
+async def check_sessions(ctx):
+    status_msg = await ctx.send(f"🔍 Scanning `{SESSIONS_DIR}` for saved Telegram sessions...")
+    
+    # 1. Check if the directory even exists
+    if not os.path.exists(SESSIONS_DIR):
+        await status_msg.edit(content=f"❌ The directory `{SESSIONS_DIR}` does not exist!")
+        return
+
+    # 2. Find all .txt files
+    session_files = glob.glob(os.path.join(SESSIONS_DIR, "*.txt"))
+    
+    if not session_files:
+        await status_msg.edit(content=f"❌ No `.txt` files found inside the `{SESSIONS_DIR}` folder.")
+        return
+
+    results = []
+    
+    for file_path in session_files:
+        filename = os.path.basename(file_path)
+        session_name = filename.replace(".txt", "")
+        
+        try:
+            with open(file_path, "r") as f:
+                session_string = f.read().strip()
+                
+            if not session_string:
+                results.append(f"❌ **{session_name}** ➔ ⚠️ File is completely empty")
+                continue
+
+            # FIX 1: Explicitly grab Discord's running event loop
+            loop = asyncio.get_running_loop()
+            
+            # FIX 2: Force Telethon to use Discord's loop so it doesn't crash
+            client = TelegramClient(StringSession(session_string), TG_API_ID, TG_API_HASH, loop=loop)
+            
+            await client.connect()
+            
+            if await client.is_user_authorized():
+                me = await client.get_me()
+                phone = me.phone if me.phone else "Hidden by Privacy Settings"
+                results.append(f"✅ **{session_name}** ➔ 📱 `+{phone}`")
+            else:
+                results.append(f"❌ **{session_name}** ➔ ⚠️ Dead Session (Needs Re-auth)")
+                
+        except Exception as e:
+            # FIX 3: Push the EXACT Python error straight to Discord so we can read it
+            error_name = type(e).__name__
+            error_msg = str(e)
+            results.append(f"⚠️ **{session_name}** ➔ Error: `{error_name}: {error_msg}`")
+            
+        finally:
+            if 'client' in locals() and client.is_connected():
+                await client.disconnect()
+
+    embed = discord.Embed(
+        title="📱 Telegram Fleet Status", 
+        description="\n\n".join(results),
+        color=discord.Color.blue()
+    )
+    embed.set_footer(text=f"Total Sessions Checked: {len(session_files)}")
+    
+    await status_msg.edit(content="", embed=embed)
+
 
 bot.run(DISCORD_TOKEN)
