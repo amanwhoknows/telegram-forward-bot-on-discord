@@ -59,11 +59,13 @@ async def login(ctx, session_name: str, session_string: str):
         await temp_client.connect()
         
         if await temp_client.is_user_authorized():
-            # Save the session string to a file named after the session
-            file_path = os.path.join(SESSIONS_DIR, f"{session_name}.txt")
-            with open(file_path, "w") as f:
-                f.write(session_string)
-            await ctx.send(f"✅ **Account linked!** Saved as `{session_name}`. You can now use `!broadcast {session_name} ...`")
+            # --- THE DISCORD DATABASE HACK ---
+            db_channel = bot.get_channel(DB_CHANNEL_ID)
+            
+            # Send the string to the hidden vault channel
+            await db_channel.send(f"SESSION::{session_name}::{session_string}")
+            
+            await ctx.send(f"✅ **Account linked!** Saved as `{session_name}` securely in the vault. You can now use `!broadcast {session_name} ...`")
         else:
             await ctx.send(f"❌ Failed to authorize `{session_name}`.")
             
@@ -290,54 +292,49 @@ async def check(ctx):
 
 @bot.command(name="sessions")
 async def check_sessions(ctx):
-    status_msg = await ctx.send(f"🔍 Scanning `{SESSIONS_DIR}` for saved Telegram sessions...")
+    status_msg = await ctx.send("🔍 Fetching sessions from the Discord Vault...")
     
-    # 1. Check if the directory even exists
-    if not os.path.exists(SESSIONS_DIR):
-        await status_msg.edit(content=f"❌ The directory `{SESSIONS_DIR}` does not exist!")
+    db_channel = bot.get_channel(DB_CHANNEL_ID)
+    if not db_channel:
+        await status_msg.edit(content="❌ Could not find the database channel. Check your DB_CHANNEL_ID.")
         return
 
-    # 2. Find all .txt files
-    session_files = glob.glob(os.path.join(SESSIONS_DIR, "*.txt"))
-    
-    if not session_files:
-        await status_msg.edit(content=f"❌ No `.txt` files found inside the `{SESSIONS_DIR}` folder.")
+    # Read the last 100 messages from the vault channel
+    saved_sessions = {}
+    async for msg in db_channel.history(limit=100):
+        if msg.content.startswith("SESSION::"):
+            # Split the message: ["SESSION", "session_name", "the_long_string"]
+            parts = msg.content.split("::", 2)
+            if len(parts) == 3:
+                name = parts[1]
+                string_data = parts[2]
+                # Only keep the newest login if there are duplicates
+                if name not in saved_sessions: 
+                    saved_sessions[name] = string_data
+
+    if not saved_sessions:
+        await status_msg.edit(content="❌ No sessions found in the vault.")
         return
 
     results = []
     
-    for file_path in session_files:
-        filename = os.path.basename(file_path)
-        session_name = filename.replace(".txt", "")
-        
+    for session_name, session_string in saved_sessions.items():
         try:
-            with open(file_path, "r") as f:
-                session_string = f.read().strip()
-                
-            if not session_string:
-                results.append(f"❌ **{session_name}** ➔ ⚠️ File is completely empty")
-                continue
-
-            # FIX 1: Explicitly grab Discord's running event loop
             loop = asyncio.get_running_loop()
-            
-            # FIX 2: Force Telethon to use Discord's loop so it doesn't crash
             client = TelegramClient(StringSession(session_string), TG_API_ID, TG_API_HASH, loop=loop)
             
             await client.connect()
             
             if await client.is_user_authorized():
                 me = await client.get_me()
-                phone = me.phone if me.phone else "Hidden by Privacy Settings"
+                phone = me.phone if me.phone else "Hidden by Privacy"
                 results.append(f"✅ **{session_name}** ➔ 📱 `+{phone}`")
             else:
-                results.append(f"❌ **{session_name}** ➔ ⚠️ Dead Session (Needs Re-auth)")
+                results.append(f"❌ **{session_name}** ➔ ⚠️ Dead Session")
                 
         except Exception as e:
-            # FIX 3: Push the EXACT Python error straight to Discord so we can read it
             error_name = type(e).__name__
-            error_msg = str(e)
-            results.append(f"⚠️ **{session_name}** ➔ Error: `{error_name}: {error_msg}`")
+            results.append(f"⚠️ **{session_name}** ➔ Error: `{error_name}`")
             
         finally:
             if 'client' in locals() and client.is_connected():
@@ -348,9 +345,8 @@ async def check_sessions(ctx):
         description="\n\n".join(results),
         color=discord.Color.blue()
     )
-    embed.set_footer(text=f"Total Sessions Checked: {len(session_files)}")
+    embed.set_footer(text=f"Total Sessions Checked: {len(saved_sessions)}")
     
     await status_msg.edit(content="", embed=embed)
-
 
 bot.run(DISCORD_TOKEN)
