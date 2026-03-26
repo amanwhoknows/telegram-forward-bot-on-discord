@@ -73,35 +73,41 @@ async def login(ctx, session_name: str, session_string: str):
         
 @bot.command(name="sessions")
 async def check_sessions(ctx):
-    # Optional: Add a check here so only YOU can run this command
-    # if ctx.author.id != YOUR_DISCORD_ID: return
-
     # Let the user know it's working (Telethon connections take a second)
-    status_msg = await ctx.send("🔍 Scanning local directory for Telegram sessions...")
+    status_msg = await ctx.send(f"🔍 Scanning `{SESSIONS_DIR}` for saved Telegram sessions...")
     
-    # Find all Telethon session files in the current folder
-    session_files = glob.glob("*.session")
+    # Find all .txt files in your custom sessions directory
+    session_files = glob.glob(os.path.join(SESSIONS_DIR, "*.txt"))
     
     if not session_files:
-        await status_msg.edit(content="❌ No `.session` files found in the bot's directory.")
+        await status_msg.edit(content=f"❌ No session files found in the `{SESSIONS_DIR}` directory.")
         return
 
     results = []
     
-    for file in session_files:
-        session_name = file.replace(".session", "")
-        
-        # Initialize the Telethon client
-        client = TelegramClient(session_name, API_ID, API_HASH)
+    for file_path in session_files:
+        # Extract just the name of the session from the file path
+        filename = os.path.basename(file_path)
+        session_name = filename.replace(".txt", "")
         
         try:
-            # Connect to Telegram servers without starting a new login prompt
+            # Read the saved string session from the file
+            with open(file_path, "r") as f:
+                session_string = f.read().strip()
+                
+            if not session_string:
+                results.append(f"❌ **{session_name}** ➔ ⚠️ Empty File")
+                continue
+
+            # Initialize the Telethon client using the StringSession
+            client = TelegramClient(StringSession(session_string), TG_API_ID, TG_API_HASH)
+            
+            # Connect to Telegram servers
             await client.connect()
             
             # Check if the session file is still valid and logged in
             if await client.is_user_authorized():
                 me = await client.get_me()
-                # Telegram sometimes hides the phone number depending on privacy settings
                 phone = me.phone if me.phone else "Hidden by Privacy Settings"
                 results.append(f"✅ **{session_name}** ➔ 📱 `+{phone}`")
             else:
@@ -109,18 +115,20 @@ async def check_sessions(ctx):
                 
         except Exception as e:
             results.append(f"⚠️ **{session_name}** ➔ Connection Error")
+            print(f"Error checking session {session_name}: {e}") # Print to console for debugging
             
         finally:
-            # Always disconnect so you don't leak memory or hang the bot
-            await client.disconnect()
+            # Safely disconnect if the client was created
+            if 'client' in locals() and client.is_connected():
+                await client.disconnect()
 
-    # Build a nice looking Discord Embed for the output
+    # Build the Discord Embed for the output
     embed = discord.Embed(
         title="📱 Telegram Fleet Status", 
         description="\n\n".join(results),
         color=discord.Color.green()
     )
-    embed.set_footer(text=f"Total Sessions Found: {len(session_files)}")
+    embed.set_footer(text=f"Total Sessions Checked: {len(session_files)}")
     
     # Update the original message with the final embed
     await status_msg.edit(content="", embed=embed)
